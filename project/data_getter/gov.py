@@ -1,0 +1,9 @@
+
+def get_demograhic_data():
+    ...
+
+def get_income_data():
+    ...
+
+def get_taipei_tourist_spot_coord_data():
+    ...
