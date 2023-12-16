@@ -1,3 +1,0 @@
-
-def get_711_coord_data():
-    ...

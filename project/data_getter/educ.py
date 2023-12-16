@@ -1,6 +1,0 @@
-
-def get_college_coord_data():
-    ...
-
-def get_highschool_coor_data():
-    ...
