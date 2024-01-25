@@ -43,6 +43,8 @@ class XYCoord(FeatureBaseClass):
         return ["lat", "lng"]
 
     def transform(self, df:DF) -> DF:
+        if {'x', 'y'} in set(df.columns):
+            return df
         x,y = self.geo_transformer_func(df[self.lat_col], df[self.lng_col])
         df['x'] = x
         df['y'] = y
@@ -55,7 +57,7 @@ class FeatureFromStation(FeatureBaseClass):
     """
     @property
     def list_required_columns(self):
-        return ['x','y', 'address', 'name']
+        return ['x','y', 'address']
 
     @property
     def geo_transformer(self):

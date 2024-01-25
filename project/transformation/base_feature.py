@@ -28,6 +28,7 @@ class FeaturePipe:
     def __init__(self, feature_list:list[FeatureBaseClass]):
         self.feature_list = feature_list
 
+
     def append_feature(self, feature:FeatureBaseClass):
         self.feature_list.append(feature)
 
