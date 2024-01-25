@@ -278,3 +278,115 @@ class HighSchoolFeature(FeatureFromStation):
                                         )
         return df
     # def
+
+
+class FeaturesSpaceTime(FeatureBaseClass):
+
+    @property
+    def list_required_columns(self) ->list[str]:
+        return ['x', 'y', 'time']
+
+    @property
+    def geo_transformer(self):
+        return tw_transformer
+
+class MRTIndex(FeatureFromStation):
+    def __init__(self, mrt_df:DF, dist:float = 200):
+        """
+        Preprocessing for MRTTimeFueature. Adds nearest MRT exit aa station name. Return `np.nan` if no MRT found around
+        """
+
+        if not any(col in ['x', 'y'] for col in mrt_df.columns):
+            try:
+                x,y = self.geo_transformer.transform(mrt_df['lat'], mrt_df['lng'])
+                mrt_df['x'] = x
+                mrt_df['y'] = y
+            except Exception as e:
+                raise ValidationError("MRT data must have coordinate") from e
+
+        self.mrt_df = mrt_df.copy()
+        self.dist = dist
+
+    def generate_target_MRT_pair(self, df:DF) -> list[list[int]]:
+        target_kdtree = KDTree(df[['x', 'y']].to_numpy())
+        exit_kdtree = KDTree(self.mrt_df[['x', 'y']].to_numpy())
+
+        list_of_neighbors = target_kdtree.query_ball_tree(exit_kdtree, self.dist)       # list of id_exits
+
+        return [neighbor[0] if len(neighbor)>0 else None for neighbor in list_of_neighbors]
+
+    def transform(self, df: DF) -> DF:
+
+        neighbors = self.generate_target_MRT_pair(df)       # closest MRT exit for each df columns
+        self.mrt_df.loc[-1, 'station'] = None
+        neighbors  = [-1 if n is None else n for n in neighbors]
+
+        MRT_name = self.mrt_df.loc[neighbors, 'station']
+        df['MRT_name'] = list(MRT_name)
+        return df
+
+class MRTTimeFeature(FeaturesSpaceTime):
+
+    def __init__(self, mrt_df:DF, dist:float=200):
+        """
+        Generates weighted number of MRT exits.
+        Weight is given by log average in/out flows, where higher flows representing a higher importance
+        of the MRT feature.
+
+        For example, if two target points share the same amount of MRT exits,
+        but MRT beside target A has a higher flow amount,
+        then target A is assigned a higher value.
+
+        Parameter
+        ---
+        mrt_df (`pd.DataFrame`): a dataframe with ['stattion', 'hour', 'in', 'out']
+        dist (`float`): maximum distance to count as 'around an MRT exit'
+
+        Explanations
+        ---
+        The weighted number of MRTs around is calculated by the following concept:
+        1. Find all exits around a series of target point. Implemented using `KDTree`
+        2. Calculate the average of all nearby MRT points.
+        3. Repeat for all 24 hours for each  points
+        4. Merge back to data based on station/hour index pair
+        """
+        self.mrt_df = mrt_df[['station', 'hour', 'in', 'out']].set_index(['station', 'hour'])
+        self._inflow_dict = self.mrt_df['in'].to_dict()
+        self._outflow_dict = self.mrt_df['out'].to_dict()
+
+    @property
+    def list_required_columns(self) ->list[str]:
+        return super().list_required_columns + ['MRT_name']
+
+
+    def retrieve_inflow(self, station, hour):
+        return self._inflow_dict.get((station, hour), 0)
+
+    def retrieve_outflow(self, station, hour):
+        return self._outflow_dict.get((station, hour), 0)
+
+    def transform(self, df: DF) -> DF:
+        df['hour'] = df['time'].dt.hour
+
+
+        df['MRT_inflow'] = [self.retrieve_inflow(s,h) for s,h in zip(df['MRT_name'], df['hour'])]
+        df['MRT_outflow'] =[self.retrieve_outflow(s,h) for s,h in zip(df['MRT_name'], df['hour'])]
+
+        df.drop(columns=['hour', 'MRT_name'])
+
+        return df
+
+
+class WeatherFeature(FeaturesSpaceTime):
+    def __init__(self, weather_df:DF):
+        """
+        Add precipitation, temperature, and wind info into dataframe.
+
+        THe weather data should cover all time series. Preprocessing on determining the closest observatory ID is necessary.
+        """
+
+        self.weather_df = weather_df
+
+    @property
+    def list_required_columns(self):
+        return super().list_required_columns + ['weather_station']
