@@ -397,25 +397,90 @@ class MRTTimeFeature(FeaturesSpaceTime):
     def transform(self, df: DF) -> DF:
         df['hour'] = df['time'].dt.hour
 
-
+        # avoid using merge directly, or else memory overload
         df['MRT_inflow'] = [self.retrieve_inflow(s,h) for s,h in zip(df['MRT_name'], df['hour'])]
         df['MRT_outflow'] =[self.retrieve_outflow(s,h) for s,h in zip(df['MRT_name'], df['hour'])]
+        # takes about 4 mins
 
-        df.drop(columns=['hour', 'MRT_name'])
+        df.drop(columns=['hour', 'MRT_name'], inplace=True)
+        del self._inflow_dict, self._outflow_dict       # save memory
 
         return df
 
 
-class WeatherFeature(FeaturesSpaceTime):
+class WeatherIndex(FeatureFromStation):
+    def __init__(self, weather_df:DF) -> None:
+       self.weather_df = self.get_observation_pos(weather_df)
+
+    def get_observation_pos(self, df:DF):
+        df_position = df.groupby("station_name").first().reset_index()
+        x,y = self.geo_transformer.transform(df_position["latitude"], df_position["longitude"])
+        df_position['x'], df_position['y'] = x,y
+        return df_position[["station_id","station_name","station_type","x",'y']]
+
+    def transform(self, df: DF) -> DF:
+        observatory_index = self.get_nearest_neighbor_to_B(df[['x', 'y']], self.weather_df[['x','y']])
+        df['weather_station'] = list(self.weather_df['station_name'].iloc[observatory_index])
+        return df
+
+
+class WeatherTimeFeature(FeaturesSpaceTime):
     def __init__(self, weather_df:DF):
         """
         Add precipitation, temperature, and wind info into dataframe.
 
-        THe weather data should cover all time series. Preprocessing on determining the closest observatory ID is necessary.
+        The weather data should cover all time series. Preprocessing on determining the closest observatory ID is necessary.
+
+
+        columns: datetime,temperature,relative_humidity,wind_speed,precipitation,station_id,station_name,station_type,latitude,longitude
         """
 
-        self.weather_df = weather_df
+        self.weather_df =( weather_df.rename(columns={"datetime": "time", "station_name":"weather_station"})
+                          )[['time','weather_station',"temperature","relative_humidity","wind_speed","precipitation"]]
+
+        # for each pair: (station_name, datetime), get (temp)
+
 
     @property
     def list_required_columns(self):
         return super().list_required_columns + ['weather_station']
+
+    def transform(self, df: DF) -> DF:
+        df_return = (df
+                     .merge(self.weather_df, left_on=['weather_station', 'time'], right_on=['weather_station', 'time'], how='left')
+                     .drop(columns =[ 'weather_station']))
+        return df_return
+
+
+"""
+Time related solely
+"""
+class FeatureTime(FeatureBaseClass):
+    """
+    Features that depends solely on time
+    """
+
+    def __init__(self) -> None:
+        pass
+
+    @property
+    def list_required_columns(self):
+        return ['time']
+
+    def transform(self, df: DF) -> DF:
+        ts:pd.Timestamp = df['time'].dt
+        df['hour'] = ts.hour
+        df['month'] = ts.month
+        df['weekday'] = ts.weekday
+        return df
+
+
+class Covid19Feature(FeatureTime):
+    def __init__(self) -> None:
+        self.covid_start = pd.Timestamp("2021-05-05")
+        self.covid_end = pd.Timestamp("2021-07-26")
+
+    def transform(self, df: DF) -> DF:
+        df['during_covid'] = ( df['time'] >= self.covid_start )& ( df['time']<=self.covid_end)
+
+        return df
