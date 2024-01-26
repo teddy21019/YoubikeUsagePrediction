@@ -88,6 +88,16 @@ class FeatureFromStation(FeatureBaseClass):
 
     @staticmethod
     def get_A_close_to_B(coordsA:np.ndarray, coordsB:np.ndarray, dist:float):
+        """
+        Boolean array indicating whether any points in coordsB is near a point in coordsA, for each coordsA
+
+        Params
+        ----
+        coordsA np.ndarray: N x 2
+        coordsB np.ndarray: M x 2
+
+        coords can be passed as df[['x', 'y']]
+        """
         kd1 = KDTree(coordsA)
         kd2 = KDTree(coordsB)
 
@@ -95,6 +105,25 @@ class FeatureFromStation(FeatureBaseClass):
             kd1.sparse_distance_matrix(kd2, dist).toarray()
             , axis= -1) > 0
         return close
+
+    @staticmethod
+    def get_nearest_neighbor_to_B(coordsA:np.ndarray, coordsB:np.ndarray):
+        """
+        Get the index of coordsB that is closest to each points in coordsA
+
+        Params
+        ----
+        coordsA np.ndarray: N x 2
+        coordsB np.ndarray: M x 2
+
+        coords can be passed as df[['x', 'y']]
+        """
+        kd1 = KDTree(coordsA)
+        kd2 = KDTree(coordsB)
+        dist = kd1.sparse_distance_matrix(kd2, np.inf).toarray()      # N x M, note that sparce matrix doesn't work well with np.argmin
+        min_index = np.argmin(dist, axis=-1)                          # N, indices
+        return min_index
+
 
 
 class ConvenientStoreFeature(FeatureFromStation):
