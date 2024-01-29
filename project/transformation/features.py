@@ -266,6 +266,22 @@ class BusAggregateFeature(FeatureFromStation):
 
         return np.sum(num_buses * close, axis=0)                    # B x Y -> Y
 
+
+class TouristSpotFeature(FeatureFromStation):
+    def __init__(self, tourist_df:DF, dist: float = 400):
+        if not any(col in ['x', 'y'] for col in tourist_df.columns):
+            try:
+                x,y = self.geo_transformer.transform(tourist_df['lat'], tourist_df['lng'])
+                tourist_df['x'] = x
+                tourist_df['y'] = y
+            except Exception as e:
+                raise ValidationError("Tourist spot data must have coordinate") from e
+        self.tourist_df = tourist_df[['tour_name','x','y']]
+        self.dist = dist
+    def transform(self, df: DF) -> DF:
+        df['count_tourist_spot'] = self.get_around_point(df, self.tourist_df['x'], self.tourist_df['y'], dis=self.dist)
+        return df
+
 class BikeRouteFeaure(FeatureFromStation):
     def __init__(self, bike_route_df:DF, dist:float = 1000.0):
         if not any(col in ['x', 'y'] for col in bike_route_df.columns):
