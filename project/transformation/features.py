@@ -3,6 +3,7 @@ from transformation import FeatureBaseClass, ValidationError
 from transformation.geo import tw_transformer
 
 import numpy as np
+from numpy.typing import ArrayLike
 import pandas as pd
 from scipy.spatial import KDTree
 
@@ -64,7 +65,7 @@ class FeatureFromStation(FeatureBaseClass):
         return tw_transformer
 
     @staticmethod
-    def get_around_point(df:DF, x:np.ndarray, y:np.ndarray, dis:float) -> np.ndarray:
+    def get_around_point(df:DF, x:ArrayLike, y:ArrayLike, dis:float) -> np.ndarray:
         """
         For each data in df, count how many points are within dis, based on x and y coords of target objects.
 
@@ -87,7 +88,7 @@ class FeatureFromStation(FeatureBaseClass):
 
 
     @staticmethod
-    def get_A_close_to_B(coordsA:np.ndarray, coordsB:np.ndarray, dist:float):
+    def get_A_close_to_B(coordsA:ArrayLike, coordsB:ArrayLike, dist:float):
         """
         Boolean array indicating whether any points in coordsB is near a point in coordsA, for each coordsA
 
@@ -107,7 +108,7 @@ class FeatureFromStation(FeatureBaseClass):
         return close
 
     @staticmethod
-    def get_nearest_neighbor_to_B(coordsA:np.ndarray, coordsB:np.ndarray):
+    def get_nearest_neighbor_to_B(coordsA:ArrayLike, coordsB:ArrayLike):
         """
         Get the index of coordsB that is closest to each points in coordsA
 
@@ -148,7 +149,7 @@ class ConvenientStoreFeature(FeatureFromStation):
         return df
 
 class VillageFeature(FeatureFromStation):
-    def __init__(self, village_data:DF, village_coord:DF, village_name_col:tuple[str] = ('里別', 'VILLNAME')):
+    def __init__(self, village_data:DF, village_coord:DF, village_name_col:tuple[str, str] = ('里別', 'VILLNAME')):
         """
         Village data should be in the following form:
         village_name, lat(x), lng(y), [...features]
@@ -210,7 +211,7 @@ class VillageFeature(FeatureFromStation):
 
         distances = np.linalg.norm(
                 village_coordinates[:, np.newaxis, :]                       # M x 1 x 2
-            -   station_coordinates,                                        #     N x 2
+                - station_coordinates,                                      #     N x 2
             axis=2)                                                         # M x N
 
         # Assign weight as the inverse of distance
@@ -499,4 +500,41 @@ class Covid19Feature(FeatureTime):
     def transform(self, df: DF) -> DF:
         df['during_covid'] = ( df['time'] >= self.covid_start )& ( df['time']<=self.covid_end)
 
+        return df
+
+
+class FlowRatioFeature(FeatureBaseClass):
+
+    def __init__(self) -> None:
+        ...
+    @property
+    def list_required_columns(self):
+        return ["count_in", "count_out", "total"]
+
+    def transform(self, df: DF) -> DF:
+        df['ratio_in'] = df['count_in'] / df['total']
+        df['ratio_out'] = df['count_out'] / df['total']
+
+        df.drop(columns=['count_in', 'count_out'], inplace=True)
+        return df
+
+class RemoveUseless(FeatureBaseClass):
+    def __init__(self) -> None:
+        ...
+    @property
+    def list_required_columns(self):
+
+        return []
+
+
+    def transform(self, df: DF) -> DF:
+        cols_to_drop = [
+            "name","time","count_out","count_in","neighbor_out","neighbor_in","total","lat","lng","x","y","address"
+        ]
+
+        for col in cols_to_drop:
+            try:
+                df.drop(columns=col, inplace=True)
+            except KeyError:
+                continue
         return df
