@@ -7,6 +7,8 @@ from numpy.typing import ArrayLike
 import pandas as pd
 from scipy.spatial import KDTree
 
+from typing import Self
+
 class XYCoord(FeatureBaseClass):
     """
     Adds Cartesian coordinate system features based on latitude and longitude columns.
@@ -396,7 +398,7 @@ class MRTTimeFeature(FeaturesSpaceTime):
         3. Repeat for all 24 hours for each  points
         4. Merge back to data based on station/hour index pair
         """
-        self.mrt_df = mrt_df[['station', 'hour', 'in', 'out']].set_index(['station', 'hour'])
+        self.mrt_df = mrt_df[['station', 'hour', 'in', 'out']].set_index(['station', 'hour']).replace(-np.inf, 0)
         self._inflow_dict = self.mrt_df['in'].to_dict()
         self._outflow_dict = self.mrt_df['out'].to_dict()
 
@@ -518,18 +520,42 @@ class FlowRatioFeature(FeatureBaseClass):
         df.drop(columns=['count_in', 'count_out'], inplace=True)
         return df
 
-class RemoveUseless(FeatureBaseClass):
+class FlowPolarFeature(FeatureBaseClass):
     def __init__(self) -> None:
         ...
+
+    @property
+    def list_required_columns(self):
+        return ["count_in", "count_out", "total"]
+
+    def transform(self, df: DF) -> DF:
+        df['theta'] = np.arctan(df['count_in'] / df['count_out'])       # ratio of in and out
+        df['r'] = df['count_in'] + df['count_out']                      # total flow count
+                                                                        # ===================
+                                                                        # in polar coordinate (r, theta)
+
+
+        df.drop(columns=['count_in', 'count_out'], inplace=True)
+        return df
+
+
+class RemoveUseless(FeatureBaseClass):
+    def __init__(self) -> None:
+        self.__list_required_columns = []
     @property
     def list_required_columns(self):
 
-        return []
+        return self.__list_required_columns
+
+    def set_cols_to_drop(self, cols:list[str])-> Self:
+        self.__list_required_columns = cols
+        return self
+
 
 
     def transform(self, df: DF) -> DF:
         cols_to_drop = [
-            "name","time","count_out","count_in","neighbor_out","neighbor_in","total","lat","lng","x","y","address"
+            "name","time","neighbor_out","neighbor_in","total","lat","lng","x","y","address"
         ]
 
         for col in cols_to_drop:
